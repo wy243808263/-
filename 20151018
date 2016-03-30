@@ -1,0 +1,361 @@
+手工建立OEM
+emca -h
+emca -deconfig dbcontrol db -repos drop --删除OEM
+emca -config dbcontrol db -repos create --建立OEM
+
+SID
+端口号 1521
+一堆管理用的用户密码
+option的选项可以直接回车掠过
+
+sqlplus / as sysdba
+alter user dbsnmp identified by oracle account unlock;
+
+
+启动和停止 Database Control 
+emctl start dbconsole
+emctl stop dbconsole
+
+https://192.168.253.101:1158/em/
+
+
+初始化参数文件:
+所在位置： cd $ORACLE_HOME/dbs/
+文件名：spfileorcl.ora(spfileSID.ora)
+作用，数据库启动的时候会调用这个文件，读取启动参数
+[oracle@dbsrv dbs]$ strings spfileorcl.ora 查看内容
+这个文件是二进制文件,无法用VI文本编辑器修改
+
+
+在线帮助的 Reference 里面查询每个参数的意思
+
+sqlplus 查看参数
+SELECT name , value FROM V$PARAMETER;
+show parameter para
+
+SQL> SELECT SYSDATE FROM dual;
+
+SYSDATE
+---------
+18-OCT-15
+
+SQL> ALTER SESSION SET NLS_DATE_FORMAT ='yyyy-mm-dd';
+
+Session altered.
+
+SQL> SELECT SYSDATE FROM dual;
+
+SYSDATE
+----------
+2015-10-18
+
+
+SQL> show parameter SEC_MAX_FAILED_LOGIN_ATTEMPTS
+
+
+ALTER SYSTEM  SET SEC_MAX_FAILED_LOGIN_ATTEMPTS=2 SCOPE=SPFILE; --修改spfile，不立即生效，需要重启数据库
+ALTER SYSTEM  SET SEC_MAX_FAILED_LOGIN_ATTEMPTS=2 SCOPE=MEMORY; --修改内存，不修改spfile,重启后失效
+ALTER SYSTEM  SET SEC_MAX_FAILED_LOGIN_ATTEMPTS=2 [SCOPE=BOTH]; --修改内存，修改spfile,立即生效
+
+
+ERROR at line 1:
+ORA-02095: specified initialization parameter cannot be modified
+说明这个参数是一个静态参数，只能修改spfile后重启数据库生效
+
+alter system set memory_target
+
+nomount状态
+startup nomount 读取参数文件，启动后台进程，分配内存，实例准备完毕（只是一个壳）
+数据库无法正常服务，
+只能DBA做维护：
+重建控制文件，恢复控制文件，手工建库等
+
+mount状态
+alter database mount或者shutdown状态下：startup mount
+mount状态：数据库也无法正常工作，
+数据库已经将控制文件打开，实例和数据库相关联
+只能DBA做维护：
+对数据库的物理机构调整维护
+数据库的归档模式修改
+数据库的还原
+
+open状态
+alter database open;或者或者shutdown状态下startup
+
+
+select STATUS from v$instance;查看当前数据库的状态
+
+shutdown immediate
+最常用的
+新的连接不会在进来
+用户如果有事务没有提交，oracle会自动回滚事务，
+其他进程会自动被关闭
+最后关闭数据库
+
+shutdown [normal]
+默认的选项，发出命令后，新的连接不会在进来,需要等待现有连接的任何一个用户自己退出后，才能关闭数据库
+
+
+shutdown transactional
+发出命令后，需要等待现有连接的,新的连接不会在进来，
+有活动事务的用户，需要用户自觉的提交事务后才能关闭数据
+已经提交的连接，数据库会自动中断
+
+shutdown abort
+粗暴的关闭数据库，相当于直接拔电源挂机，非正常的关库
+
+日志文件路径
+/u01/app/oracle/diag/rdbms/orcl/orcl/trace/alert_orcl.log
+ORACLE_BASE/diag/rdbms/sid/sid/trace/alert_sid.log
+跟踪文件:
+cd /u01/app/oracle/diag/rdbms/orcl/orcl/trace/XXX进程号.trc
+
+动态性能视图：
+Part III Dynamic Performance Views
+7 Dynamic Performance (V$) Views: V$ACCESS to V$HVMASTER_INFO
+都是V$开头的
+
+
+
+pfile 和 spfile都可以去启动数据库
+
+数据库在启动时候，先找spfilesid.ora(spfile)，如果没有找到，找initsid.ora(pifle)
+
+spfile和pfile可以互相转换
+
+sqlplus：
+create spfile from pfile;
+create pfile from spfile;--关闭数据库
+
+oracle网络
+
+服务器端$ORACLE_HOME/network/admin/listener.ora
+客户端端$ORACLE_HOME/network/admin/tnsnames.ora
+
+netca图形界面
+netmgr
+
+alter system set local_listener = '(DESCRIPTION=(ADDRESS=(PROTOCOL=tcp)(HOST=dbsrv)(PORT=1522)))'
+
+
+
+客户端的简便连接
+C:\Users\admin>sqlplus sys/oracle@192.168.253.101:1521/orcl as sysdba
+
+
+修改默认的server_name
+alter system set service_names = orcl,aaa ;
+
+
+
+tnsping orcl 测试主机的监听是否正常
+
+
+
+
+
+ 
+ 
+ 
+
+CREATE TABLESPACE TBS001 DATAFILE '/u01/app/oracle/oradata/orcl/tbs001-01.dbf' 
+SIZE 50M 
+AUTOEXTEND ON NEXT 1M 
+MAXSIZE 2G;
+
+
+create table hr.emp001 tablespace tbs001 as select * from employees 
+
+alter table hr.emp001 tablespace example;
+alter table hr.emp001 move tablespace example;
+
+增加数据文件
+ALTER TABLESPACE "TBS001" 
+ADD DATAFILE '/u01/app/oracle/oradata/orcl/tbs001-03.dbf' SIZE 50M
+
+
+
+SQL> drop tablespace TBS001 including contents and datafiles;
+
+Tablespace dropped.
+
+
+SYSTEM不能关闭和启动数据库，其他和sys一样
+所有的系统表和字典表属于sys用户
+
+建立用户
+CREATE USER USER01
+PROFILE DEFAULT
+IDENTIFIED BY oracle 
+DEFAULT TABLESPACE EXAMPLE
+TEMPORARY TABLESPACE TEMP 
+ACCOUNT UNLOCK;
+
+给权限
+grant CREATE SESSION to user01;
+
+配额
+ALTER USER "USER01" QUOTA 20 M ON "EXAMPLE"
+
+对象权限
+GRANT DELETE ON "HR"."EMPLOYEES" TO "USER01"
+GRANT INSERT ON "HR"."EMPLOYEES" TO "USER01"
+GRANT SELECT ON "HR"."EMPLOYEES" TO "USER01"
+GRANT UPDATE ON "HR"."EMPLOYEES" TO "USER01"
+
+GRANT DELETE ,INSERT ,SELECT ,UPDATE  
+ON "HR"."EMPLOYEES" TO "USER01"  WITH admin OPTION
+
+
+GRANT "CONNECT" TO "USER01" = GRANT CREATE SESSION to "USER01" 
+
+ WITH GRANT OPTION
+ WITH admin OPTION
+
+
+CREATE ROLE "ROLE01"
+GRANT CREATE SESSION TO "ROLE01"
+GRANT CREATE TABLE TO "ROLE01"
+GRANT DELETE ON "HR"."EMPLOYEES" TO "ROLE01"
+GRANT INSERT ON "HR"."EMPLOYEES" TO "ROLE01"
+GRANT SELECT ON "HR"."EMPLOYEES" TO "ROLE01"
+GRANT UPDATE ON "HR"."EMPLOYEES" TO "ROLE01"
+
+
+CREATE USER USER02
+PROFILE DEFAULT
+IDENTIFIED BY oracle 
+DEFAULT TABLESPACE EXAMPLE
+TEMPORARY TABLESPACE TEMP 
+ACCOUNT UNLOCK;
+
+grant role01 to user02;
+
+ALTER USER "USER01" QUOTA 20 M ON EXAMPLE;
+
+
+ALTER PROFILE "DEFAULT" LIMIT PASSWORD_LIFE_TIME UNLIMITED
+PASSWORD_GRACE_TIME UNLIMITED
+PASSWORD_LOCK_TIME UNLIMITED
+FAILED_LOGIN_ATTEMPTS UNLIMITED
+
+
+CREATE OR REPLACE FUNCTION compute_tax (salary NUMBER)
+RETURN NUMBER
+AS
+BEGIN
+  IF salary<5000 THEN
+     RETURN salary*.15;
+  ELSE
+     RETURN salary*.33;
+  END IF;
+END;
+/
+
+
+select hr.compute(1000),hr.compute(10000) from dual;
+
+CREATE PROCEDURE "HR"."GIVE_RAISE_TO_ALL" as 
+begin 
+update hr.employees set salary=salary*1.05; 
+commit; 
+end;
+
+begin
+ hr.give_raise_to_all;
+end;
+
+CREATE OR REPLACE PACKAGE "HR"."MONEY" as 
+function compute_tax(salary in number) return number; 
+procedure give_raise_to_all; 
+end;
+
+CREATE OR REPLACE PACKAGE BODY "HR"."MONEY" as 
+function compute_tax(salary in number) return number 
+AS 
+BEGIN 
+IF salary<5000 THEN 
+RETURN salary*.15; 
+ELSE 
+RETURN salary*.33; 
+END IF; 
+END; 
+
+procedure give_raise_to_all 
+as 
+begin 
+update hr.employees set salary=salary*1.05; 
+commit; 
+end; 
+
+end;
+
+
+
+调用包
+select hr.money.compute_tax(1000),hr.money.compute_tax(10000) from dual;
+
+begin
+ hr.money.give_raise_to_all;
+end;
+
+
+
+
+Oracle DB 附带了多个内置 PL/SQL 程序包，这些程序包可提供： 
+管理和维护实用程序 
+扩展功能 
+包的说明：
+Master Book List--PL/SQL Packages and Types Reference--DBMS_XXX
+
+ALTER SYSTEM KILL SESSION '1611,307' IMMEDIATE;
+
+
+select * from v$lock where type in('TM','TX')
+select * from dba_objects where object_id = 70272
+
+LMODE NUMBER Lock mode in which the session holds the lock: 
+?0 - none
+
+
+?1 - null (NULL)
+
+
+?2 - row-S (SS)
+
+
+?3 - row-X (SX)
+
+
+?4 - share (S)
+
+
+?5 - S/Row-X (SSX)
+
+
+?6 - exclusive (X)
+
+ 
+REQUEST NUMBER Lock mode in which the process requests the lock: 
+?0 - none
+
+
+?1 - null (NULL)
+
+
+?2 - row-S (SS)
+
+
+?3 - row-X (SX)
+
+
+?4 - share (S)
+
+
+?5 - S/Row-X (SSX)
+
+
+?6 - exclusive (X)
+
+select * from v$session where sid = '1611'
+ALTER SYSTEM KILL SESSION '1611,307' IMMEDIATE;
