@@ -1,0 +1,179 @@
+http://pan.baidu.com/s/1sjFvzS5
+
+
+undo 是oracle中核心的表空间,表空间的一种
+
+
+强制审计目录
+/u01/app/oracle/admin/orcl/adump下面的*.aud
+
+
+查询审计线索
+select * from SYS.AUD$ where userid = 'HR'
+select * from dba_audit_trail where username = 'HR'
+select * from DBA_COMMON_AUDIT_TRAIL where DB_USER = 'HR'
+
+
+AUDIT SELECT ON hr.employees BY SESSION
+
+
+维护线索，直接删除即可，或者之前做好该表的备份（exp导出）
+SQL> truncate table SYS.AUD$;
+
+Table truncated.
+
+FGA 的审计线索存储在 FGA_LOG$ 表中。
+默认情况下，这两个表都是在 SYSTEM 表空间中创建的。
+通过使用数据泵导出和导入实用程序可将这两个表移到另一表空间中
+
+
+begin
+dbms_fga.add_policy (
+ object_schema  =>'HR',
+ object_name	=>'EMPLOYEES',
+ policy_name	=>'audit_emps_salary',
+ audit_condition=>'department_id=10',
+ audit_column 	=>'SALARY,COMMISSION_PCT',
+ handler_schema	=>null,
+ handler_module	=>null,
+ enable		=>TRUE,
+ statement_types=>'SELECT,UPDATE');
+end;
+/
+
+
+收集优化统计信息，更新一下统计信息
+begin
+dbms_stats.gather_table_stats('HR','EMP005');
+end;
+/
+
+dbms_stats.gather_database_stats;
+
+
+
+数据库级的统计信息
+SQL>  show parameter statistics_level                     string
+
+NAME                                 TYPE        VALUE
+------------------------------------ ----------- ---------------------
+statistics_level                     string      TYPICAL
+
+
+修改awr保留天数，和快照取的时间
+begin DBMS_WORKLOAD_REPOSITORY.MODIFY_SNAPSHOT_SETTINGS(11520（秒，保留时间）,60（分钟，取快照时间）); end;
+
+
+查看数据库的当前告警
+select * from dba_outstanding_alerts
+
+select * from DBA_ALERT_HISTORY--历史上的报警
+select * from dba_outstanding_alerts--当前未处理的报警
+
+
+
+无效 PL/SQL 对象：可通过查询数据字典查看 PL/SQL 对象的当前状态。可使用以下命令行查找到无效 PL/SQL 对象： 
+SELECT object_name, object_type FROM DBA_OBJECTS 
+WHERE status = 'INVALID'; 
+
+
+
+使用 Enterprise Manager 或通过 SQL 命令可手动重新编译无效的 PL/SQL 对象： 
+ALTER PROCEDURE HR.add_job_history COMPILE; 
+
+手动重新编译 PL/SQL 数据包，需要执行以下两个步骤： 
+ALTER PACKAGE HR.maintainemp COMPILE; 
+ALTER PACKAGE HR.maintainemp COMPILE BODY; 
+
+不可用索引：可通过查询 DBA_INDEXES 数据字典视图查找无效索引： 
+SELECT index_name, table_name FROM DBA_INDEXES 
+WHERE status = 'UNUSABLE'; 
+
+对于分区索引，状态保存在 DBA_IND_PARTITIONS 视图中。 
+通过重建不可用索引来重算指针，可使不可用索引变为有效。重建不可用索引会在新位置重新创建索引，然后会删除不可用索引。使用 Enterprise Manager 或通过 SQL 命令可完成此操作： 
+ALTER INDEX HR.emp_empid_pk REBUILD; 
+ALTER INDEX HR.emp_empid_pk REBUILD ONLINE; 
+ALTER INDEX HR.email REBUILD TABLESPACE USERS; 
+
+
+
+instance recover 实例恢复
+
+检查点：
+完全检查点：内存中的所有脏块都会写入到磁盘对应的数据文件上
+正常关闭数据库，还有：alter system checkpoint;
+
+增量检查点：增量的脏块，会留一些在buffer cache，目的是为了I/o最大话
+
+
+实例恢复的2阶段
+1：前滚，读取检查点位置之后的日志流水，构造断电之前的内存状态
+2：回滚，从undo找到事务信息，回滚断电前没有提交的事务.
+
+配置快速恢复
+位置由 DB_RECOVERY_FILE_DEST 参数指定 
+大小由 DB_RECOVERY_FILE_DEST_SIZE 参数指定
+
+mkdir -p /u01/app/oracle/FRA
+alter system set DB_RECOVERY_FILE_DEST_SIZE = 4G;
+alter system set DB_RECOVERY_FILE_DEST = '/u01/app/oracle/FRA';
+
+配置快速恢复区意味着确定了位置、大小和保留策略
+
+多路复用控制文件
+select * from v$controlfile;
+/home/oracle/control04.ctl
+
+
+1.	使用 ALTER SYSTEM SET control_files 命令变更 SPFILE。
+alter system set control_files = '/u01/app/oracle/oradata/orcl/control01.ctl','/u01/app/oracle/oradata/orcl/control02.ctl','/u01/app/oracle/oradata/orcl/control03.ctl','/home/oracle/control04.ctl' scope=spfile;
+
+2.	关闭数据库。
+ shutdown immediate;
+3.	将文件的操作系统副本移到新位置。
+cp 当前的控制文件到新的目录下
+ 
+4.	打开数据库。 
+startup
+
+
+select * from v$logfile
+
+ALTER DATABASE ADD LOGFILE MEMBER '/u01/app/oracle/oradata/orcl/redo01-1.log ' TO GROUP 1;
+ALTER DATABASE ADD LOGFILE MEMBER '/u01/app/oracle/oradata/orcl/redo02-1.log ' TO GROUP 2;
+ALTER DATABASE ADD LOGFILE MEMBER '/u01/app/oracle/oradata/orcl/redo03-1.log ' TO GROUP 3;
+
+
+
+查询归档模式：
+SQL> archive log list;
+Database log mode              No Archive Mode--非归档模式
+Automatic archival             Disabled
+Archive destination            USE_DB_RECOVERY_FILE_DEST
+Oldest online log sequence     20
+Current log sequence           22
+SQL>
+
+
+归档日志文件目录定义，默认是快速恢复区USE_DB_RECOVERY_FILE_DEST
+alter system set log_archive_dest_1~10 = ''
+
+非归档模式切换到归档模式:
+
+sqlplus / as sysdba 
+ 
+shutdown immediate 
+startup mount 改归档模式只能在mount状态下
+alter database archivelog; --切换到归档模式
+alter database open; 
+archive log list 
+
+
+SQL> archive log list
+Database log mode              Archive Mode ---归档模式
+Automatic archival             Enabled
+Archive destination            USE_DB_RECOVERY_FILE_DEST--归档的路径
+Oldest online log sequence     20
+Next log sequence to archive   22
+Current log sequence           22
+SQL>
